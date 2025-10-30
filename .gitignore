@@ -3,6 +3,11 @@ e-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
 *$py.class
+*.h5
+*.tif
+*.tiff
+*.mp4
+yolo_dataset/
 
 # C extensions
 *.so
@@ -222,3 +227,4 @@ __marimo__/
 *.np
 *.npz
 *.dat
+*.raw.*

@@ -33,8 +33,8 @@ def _(cv2, np):
         if image.dtype != np.uint8:
             # Ensure the values are between 0 - 1 before multiplying.
             image = (image - image.min())/(image.max() - image.min())
-            image = (image * 255).astype(np.uint8) 
-        if len(image.shape) == 3:    
+            image = (image * 255).astype(np.uint8)
+        if len(image.shape) == 3:
             gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         else:
             # Image is already grayscale
@@ -62,11 +62,11 @@ def _(cv2, np):
                 for sigma in sigmas:
 
                     kernel = cv2.getGaborKernel(
-                        ksize, 
-                        sigma, 
-                        theta, 
-                        lambd, 
-                        gamma, 
+                        ksize,
+                        sigma,
+                        theta,
+                        lambd,
+                        gamma,
                         psi=0, # No phase offset
                         ktype=cv2.CV_32F
                     )
@@ -75,7 +75,7 @@ def _(cv2, np):
                     response = cv2.filter2D(gray, cv2.CV_32F, kernel)
 
                     # We only care about the magnitude of the texture
-                    response = np.abs(response) 
+                    response = np.abs(response)
 
                     # 5. Combine using 'maximum'
                     # Find the strongest response at this angle, at any freq/scale
@@ -84,7 +84,7 @@ def _(cv2, np):
 
         # 6. Stack the 3 angle-summary channels together
         texture_map = np.stack(
-            [angle_channels[-np.pi/4], angle_channels[0], angle_channels[np.pi/4]], 
+            [angle_channels[-np.pi/4], angle_channels[0], angle_channels[np.pi/4]],
             axis=-1
         )
 
@@ -171,7 +171,7 @@ def _(browser, cv2, mo, np, tifffile):
             img_to_process = (np.float32(img_to_process) - np.float32(img_to_process).mean(axis=0))
 
             # Begin thresholding and mask creation
-            threshed = img_to_process.copy() 
+            threshed = img_to_process.copy()
             threshed = (np.float32(threshed) - np.float32(threshed).mean(axis=0))
             percentile = np.percentile(threshed, 98, axis=None)
             threshed[threshed < percentile] = 0
@@ -194,7 +194,7 @@ def _(browser, cv2, mo, np, tifffile):
 
 
             img_denormalized = cv2.normalize(img_to_process, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
-        
+
             yolo_annotations = []
             height, width = img_denormalized.shape
             total_area = np.prod(img_denormalized.shape)
@@ -276,12 +276,12 @@ def _(browser, cv2, mo, np, tifffile):
                             global_std = np.std(image_stack)
                             print
                             image_id_counter = process_and_save_yolo(image_stack, image_stack.shape[0], category, output_dir, image_id_counter, global_mean, global_std)
-    
+
                 elif file_path.suffix in ['.tif', '.tiff']:
                     image_stack = tifffile.imread(file_path)
                     global_mean = np.mean(image_stack)
                     global_std = np.std(image_stack)
-                    image_id_counter = process_and_save_yolo(image_stack, len(image_stack), category, output_dir, image_id_counter, global_mean, global_std) 
+                    image_id_counter = process_and_save_yolo(image_stack, len(image_stack), category, output_dir, image_id_counter, global_mean, global_std)
             except:
                 continue
 
@@ -341,7 +341,7 @@ def _(
         img_to_process[832,1336] = 0
         img_to_process[637, 484] = 0
         img_to_process = img_to_process[200:850, 100:]
-        threshed = img_to_process.copy() 
+        threshed = img_to_process.copy()
         threshed = (np.float32(threshed) - np.float32(threshed).mean(axis=0))
         percentile = np.percentile(threshed, 98, axis=None)
         threshed[threshed < percentile] = 0
@@ -360,7 +360,7 @@ def _(
         opened_image = cv2.morphologyEx(closed, cv2.MORPH_OPEN, np.ones((8, 8), np.uint8))
         binary_mask = np.where(opened_image, 255, 0).astype(np.uint8)
         contours, _ = cv2.findContours(opened_image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    
+
         yolo_annotations = []
         img_normalized = cv2.normalize(img_to_process, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX, dst=None)
         height, width = img_normalized.shape
@@ -368,10 +368,10 @@ def _(
         contours = [contour for contour in contours if cv2.contourArea(contour) > total_area * 0.0005 and cv2.contourArea(contour) < total_area * 0.3]
         contours = sorted(contours, key=lambda c: get_average_intensity(c, img_normalized), reverse=True)
         print(contours)
-    
+
         # 1. Create a color version of the normalized image to draw contours on
         img_with_contours = cv2.cvtColor(img_normalized, cv2.COLOR_GRAY2RGB)
-    
+
         # 2. Draw the contours on the color image
         #    -1 means draw all contours, (0, 255, 0) is green, 2 is the line thickness
         colors = [(255, 255, 0), (0, 255, 255), (0, 0, 255), (255, 0, 255)]
@@ -379,7 +379,7 @@ def _(
             _i = i % (len(colors) - 1)
             cv2.drawContours(img_with_contours, contours, i, colors[_i], 2)
             print(_i)
-    
+
         # 3. Create the figure and plot the images
         fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(12, 6))
         #fig = plt.figure()
@@ -389,16 +389,16 @@ def _(
         #plt.colorbar(implt)
         ax1.set_title("Normalized Image")
         ax1.axis('off')
-    
+
         # # Plot the image with the detected contours
         ax2.imshow(img_with_contours)
         ax2.set_title("Detected Contours")
         ax2.axis('off')
-    
+
         ax3.imshow(binary_mask)
         ax3.set_title("Binary Mask Image")
         ax3.axis('off')
-    
+
         #print([cv2.contourArea(contour) for contour in contours])
         return mo.mpl.interactive(plt.gcf())
 

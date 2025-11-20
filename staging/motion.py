@@ -4,9 +4,9 @@ __generated_with = "0.15.2"
 app = marimo.App(width="medium")
 
 
-app._unparsable_cell(
-    r"""
-    simport os
+@app.cell
+def _():
+    import os
     import logging
 
     # Configure the logger
@@ -18,9 +18,7 @@ app._unparsable_cell(
 
     logger = logging.getLogger(__name__)
     os.environ['JAX_LOGGING_LEVEL'] = 'ERROR'
-    """,
-    name="_"
-)
+    return (logger,)
 
 
 @app.cell
@@ -31,7 +29,7 @@ def _():
     import pyarrow.parquet as pq
     from metavision_core.event_io import EventsIterator
     from metavision_sdk_cv import TrailFilterAlgorithm
-    from metavision_sdk_core import RoiFilterAlgorithm, PolarityFilterAlgorithm
+    from metavision_sdk_core import RoiFilterAlgorithm
     import marimo as mo
     import tempfile
     from pathlib import Path
@@ -47,17 +45,13 @@ def _():
     from scipy.spatial import KDTree
     from filterpy.kalman import KalmanFilter
     from filterpy.common import Q_discrete_white_noise
-    from datetime import timedelta
-    from typing import Optional
-    import traceback
     return (
         EventsIterator,
         InitVar,
         KDTree,
         KalmanFilter,
-        Optional,
+        Number,
         Path,
-        PolarityFilterAlgorithm,
         Q_discrete_white_noise,
         RoiFilterAlgorithm,
         dataclass,
@@ -68,9 +62,7 @@ def _():
         np,
         partial,
         pd,
-        timedelta,
         tqdm,
-        traceback,
     )
 
 
@@ -87,13 +79,12 @@ def _(KDTree, KalmanFilter, Q_discrete_white_noise, dataclass, np):
 
     class Tracker:
         """Manages all active tracks using Kalman Filters."""
-        def __init__(self, dist_thresh, max_age, min_hits, dt=100):
+        def __init__(self, dist_thresh, max_age, min_hits):
             self.dist_thresh = dist_thresh
             self.max_age = max_age
             self.min_hits = min_hits
             self.tracks = {}
             self.next_id = 0
-            self.dt = dt
 
         def _create_kalman_filter(self, measurement):
             """Initializes a new Kalman Filter for a point."""
@@ -103,7 +94,7 @@ def _(KDTree, KalmanFilter, Q_discrete_white_noise, dataclass, np):
 
             # State Transition Matrix (constant velocity model)
             # Adjust dt later if needed, but 1.0 is a good start
-            dt = self.dt
+            dt = 1.0
             kf.F = np.array([[1, 0, dt, 0],
                                [0, 1, 0, dt],
                                [0, 0, 1, 0],
@@ -120,7 +111,7 @@ def _(KDTree, KalmanFilter, Q_discrete_white_noise, dataclass, np):
             kf.Q = Q_discrete_white_noise(dim=4, dt=dt, var=0.1)
 
             # State Covariance Matrix
-            kf.P *= 500.
+            kf.P *= 1000.
             return kf
 
         def update(self, detections):
@@ -222,9 +213,8 @@ def _(KDTree, KalmanFilter, Q_discrete_white_noise, dataclass, np):
 def _(
     EventsIterator,
     InitVar,
-    Optional,
+    Number,
     Path,
-    PolarityFilterAlgorithm,
     RoiFilterAlgorithm,
     Tracker,
     dataclass,
@@ -236,10 +226,7 @@ def _(
     np,
     partial,
     pd,
-    sys,
-    timedelta,
     tqdm,
-    traceback,
 ):
     jax.config.update("jax_debug_nans", True)
 
@@ -257,9 +244,8 @@ def _(
     (_dummy_a @ _dummy_b).block_until_ready()
     print("Warmup complete.")
 
-
     @dataclass
-    class Crop:
+    class Crop():
         x0: int
         y0: int
         width: int
@@ -275,176 +261,184 @@ def _(
 
 
     @dataclass
-    class File:
+    class File():
         path: Path
-        event_start: timedelta
-        crop: Optional[Crop] = None
-        duration: InitVar[timedelta]
-        _duration: timedelta = field(init=False, repr=False)
-        event_duration: timedelta = timedelta(milliseconds=30)
-        dt: int = 100
+        crop: Crop
+        start: InitVar[Number]
+        duration: InitVar[Number]
+        _start: Number = field(init=False, repr=False)
+        _duration: Number = field(init=False, repr=False)
 
-        def __post_init__(self, duration):
+        def __post_init__(self, start: Number, duration: Number):
+            if not isinstance(start, Number) or not isinstance(duration, Number):
+                raise TypeError("Start and Duration must be numbers")
+            self._start = start
             self._duration = duration
 
         @property
-        def duration(self) -> int:
-            return int(self._duration.total_seconds() * 1e6)
+        def start(self):
+            return int(self._start)
 
         @property
-        def start_time(self) -> int:
-            """The start of the centered window in µs, aligned to the dt grid."""
-            # 1. Calculate the ideal, unaligned start time
-            window_start = (
-                self.event_start - (self._duration - self.event_duration) / 2
-            )
-            ideal_start_us = window_start.total_seconds() * 1e6
+        def duration(self):
+            return int(self._duration)
 
-            # 2. Round the time down to the nearest multiple of self.dt
-            aligned_start_us = (ideal_start_us // self.dt) * self.dt
 
-            return max(0, int(aligned_start_us))
 
+    files = [
+        File(path = Path("/code/metavision/recording_2025-08-18_12-12-09.raw"), start = 64e6, duration = 1e6, crop=Crop(x0=200, y0=100, width=170, height=125)),
+        File(path = Path("/code/metavision/recording_2025-08-18_12-14-55_cd.dat"), start = 217.5e6, duration = 1e6, crop=Crop(x0=96, y0=12, width=150, height=150)),
+        File(path = Path("/code/metavision/recording_2025-08-18_12-23-27.raw"), start = 40.5e6, duration = 500e3, crop=Crop(x0=250, y0=150, width=245, height=245)),
+        File(path = Path("/code/metavision/recording_2025-08-18_12-46-51.raw"), start = 34e6, duration = 1e6, crop=Crop(x0=120, y0=284, width=283, height=200)),
+    ]
 
     def progress_monitor(queue, file_stems):
+
         """Listens to the queue and updates tqdm bars."""
 
         pbars = {stem: tqdm(desc=stem, leave=False) for stem in file_stems}
 
+
+
         while True:
+
             msg = queue.get()
 
-            if msg == "shutdown":
+            if msg == 'shutdown':
+
                 break
 
-            stem = msg.get("id")
+
+
+            stem = msg.get('id')
 
             pbar = pbars.get(stem)
 
             if pbar is not None:
-                if "total" in msg:
-                    pbar.total = msg["total"]
+
+                if 'total' in msg:
+
+                    pbar.total = msg['total']
 
                     pbar.refresh()
 
-                if "progress" in msg:
-                    pbar.update(msg["progress"])
+                if 'progress' in msg:
+
+                    pbar.update(msg['progress'])
+
+
 
         for pbar in pbars.values():
+
             pbar.close()
 
+
+
     class XY_Pairs_Generator:
-        def __init__(
-            self, file_path, dt, start_time=0, duration=None, max_points=1024
-        ):
-            self.evts_iter = EventsIterator(
-                str(file_path),
-                delta_t=dt,
-                start_ts=int(start_time),
-                max_duration=int(duration),
-            )
+
+        def __init__(self, file_path, dt, start_time=0, duration=None, max_points=1024):
+
+            self.evts_iter = EventsIterator(str(file_path), delta_t=dt, start_ts=int(start_time), max_duration=int(duration))
 
             self.height, self.width = self.evts_iter.get_size()
 
             self.roi_filter = RoiFilterAlgorithm(100, 100, 500, 480, False)
-            self.polarity_filter = PolarityFilterAlgorithm(polarity=0)
-            self.max_points = max_points
+
+            self.max_points=max_points
+
+
 
         def __iter__(self):
-            roi_buffer = RoiFilterAlgorithm.get_empty_output_buffer()
-            events = PolarityFilterAlgorithm.get_empty_output_buffer()
-            prev_idx, prev_evts_structured, prev_start_time = None, None, None
+
+            #roi_buffer = RoiFilterAlgorithm.get_empty_output_buffer()
+
+            prev_idx, prev_evts_structured = None, None
+
+
 
             # Helper function for efficient conversion
 
             def structured_to_jnp(structured_array):
+
                 arr = np.stack(
-                    [
-                        structured_array["x"],
-                        structured_array["y"],
-                        structured_array["p"],
-                    ],
-                    axis=-1,
+
+                    [structured_array['x'], structured_array['y'], structured_array['p'], structured_array['t']],
+
+                    axis=-1
+
                 )
 
                 return jnp.asarray(arr)
 
-            for idx, evts in enumerate(self.evts_iter):
-                self.roi_filter.process_events(evts, roi_buffer)
-                self.polarity_filter.process_events(evts, events)
-                current_evts_structured = events.numpy(copy=True)
 
+
+            for idx, evts in enumerate(self.evts_iter):
+
+                #self.roi_filter.process_events(evts, roi_buffer)
+
+                #current_evts_structured = roi_buffer.numpy(copy=True)
                 current_evts_structured = evts
+
+
 
                 # min number of pts = 10
 
                 if len(current_evts_structured) > 0:
+
                     if prev_evts_structured is not None:
+
                         # Convert to JAX arrays
 
                         source_points = structured_to_jnp(prev_evts_structured)
 
-                        target_points = structured_to_jnp(
-                            current_evts_structured
-                        )
+                        target_points = structured_to_jnp(current_evts_structured)
 
                         time_gap = idx - prev_idx
 
-                        if (
-                            source_points.shape[0] < 7
-                            or target_points.shape[0] < 7
-                        ):
-                            yield None
 
+
+                        if source_points.shape[0] < 7 or target_points.shape[0] < 7:
+
+                            yield None
                             continue
 
-                        cov_source = jnp.cov(
-                            source_points[:, :2], rowvar=False
-                        )
 
-                        cov_target = jnp.cov(
-                            target_points[:, :2], rowvar=False
-                        )
+                        cov_source = jnp.cov(source_points[:, :2], rowvar=False)
+                        cov_target = jnp.cov(target_points[:, :2], rowvar=False)
 
                         det_source = jnp.linalg.det(cov_source)
-
                         det_target = jnp.linalg.det(cov_target)
 
                         degeneracy_threshold = 1e-9
 
                         # If either determinant is near zero, the geometry is bad.
-
-                        if (
-                            det_source < degeneracy_threshold
-                            or det_target < degeneracy_threshold
-                        ):
+                        if det_source < degeneracy_threshold or det_target < degeneracy_threshold:
                             # This frame is degenerate (likely collinear), so we skip it.
+                            continue # Skips to the next iteration of the for loop
 
-                            continue  # Skips to the next iteration of the for loop
+
 
                         # 1. Sample down if too many points
 
                         if source_points.shape[0] > self.max_points:
+
                             key = jax.random.PRNGKey(idx)
 
-                            perm = jax.random.permutation(
-                                key, source_points.shape[0]
-                            )
+                            perm = jax.random.permutation(key, source_points.shape[0])
 
-                            source_points = source_points[
-                                perm[: self.max_points], :
-                            ]
+                            source_points = source_points[perm[:self.max_points], :]
+
+
 
                         if target_points.shape[0] > self.max_points:
+
                             key = jax.random.PRNGKey(idx + 1)
 
-                            perm = jax.random.permutation(
-                                key, target_points.shape[0]
-                            )
+                            perm = jax.random.permutation(key, target_points.shape[0])
 
-                            target_points = target_points[
-                                perm[: self.max_points], :
-                            ]
+                            target_points = target_points[perm[:self.max_points], :]
+
+
 
                         # Store the number of real points BEFORE padding
 
@@ -452,71 +446,56 @@ def _(
 
                         num_target_points = target_points.shape[0]
 
+
+
                         # 2. Pad up if too few points
 
                         pad_source_count = self.max_points - num_source_points
 
                         if pad_source_count > 0:
+
                             # Pad with (x=0, y=0, p=3) p=3 ensures that padding doesn't affect the prob map
 
-                            padding = (
-                                jnp.zeros(
-                                    (pad_source_count, 3), dtype=jnp.float32
-                                )
-                                .at[:, -1]
-                                .set(3)
-                            )
+                            padding = jnp.zeros((pad_source_count, 4), dtype=jnp.float32).at[:, -2].set(3)
 
-                            source_points = jnp.vstack(
-                                [source_points, padding]
-                            )
+                            source_points = jnp.vstack([source_points, padding])
+
+
 
                         pad_target_count = self.max_points - num_target_points
 
                         if pad_target_count > 0:
-                            padding = (
-                                jnp.zeros(
-                                    (pad_target_count, 3), dtype=jnp.float32
-                                )
-                                .at[:, -1]
-                                .set(3)
-                            )
 
-                            target_points = jnp.vstack(
-                                [target_points, padding]
-                            )
+                            padding = jnp.zeros((pad_target_count, 4), dtype=jnp.float32).at[:, -2].set(3)
+
+                            target_points = jnp.vstack([target_points, padding])
+
+
 
                         # Yield the padded arrays AND the original counts
 
-                        yield (
-                            prev_idx,
-                            source_points,
-                            target_points,
-                            time_gap,
-                            num_source_points,
-                            num_target_points,
-                            prev_start_time,
-                        )
+                        yield (prev_idx, source_points, target_points, time_gap,
+
+                               num_source_points, num_target_points)
 
                     else:
+
                         yield None
 
-                    prev_idx, prev_evts_structured = (
-                        idx,
-                        current_evts_structured,
-                    )
+                    prev_idx, prev_evts_structured = idx, current_evts_structured
 
-                    if len(current_evts_structured) > 0:
-                        prev_start_time = current_evts_structured[0]['t'] # <-- ADD THIS
-                    else:
-                        prev_start_time = None # <-- AND THIS
-                else:
-                    yield None
 
-    @partial(jax.jit, static_argnames=("max_iterations", "tolerance"))
-    def calc_cpd_values(
-        Y, X, w, lamda, beta, max_iterations=100, tolerance=1e-5
-    ):
+
+
+
+
+
+
+
+    @partial(jax.jit, static_argnames=('max_iterations', 'tolerance'))
+
+    def calc_cpd_values(Y, X, w, lamda, beta, max_iterations=100, tolerance=1e-5):
+
         jax.debug.print("Initializing calculations...")
 
         eps = jnp.finfo(float).eps
@@ -525,25 +504,33 @@ def _(
 
         N = X.shape[0]
 
+
+
         # Initialization (pre-computed outside the loop)
 
-        G = jnp.exp(
-            -jnp.sum((Y[:, None, :] - Y[None, :, :]) ** 2, axis=-1)
-            / (2 * beta**2)
-        )
+        G = jnp.exp(-jnp.sum((Y[:, None, :] - Y[None, :, :])**2, axis=-1) / (2 * beta**2))
 
-        sq_dist_xy = jnp.sum((X[:, None, :] - Y[None, :, :]) ** 2, axis=-1)
+
+
+        sq_dist_xy = jnp.sum((X[:, None, :] - Y[None, :, :])**2, axis=-1)
 
         sigma2_init = jnp.sum(sq_dist_xy) / (D * N * M)
+
+
 
         # The state of our loop must be in a tuple: (iteration, W, sigma2, sigma2_old)
 
         initial_state = (0, jnp.zeros((M, D)), sigma2_init, jnp.inf)
 
+
+
         def loop_body(state):
+
             jax.debug.print("Looping")
 
             i, W, sigma2, sigma2_old = state
+
+
 
             # --- E-Step ---
 
@@ -551,15 +538,19 @@ def _(
 
             T = Y + G @ W
 
-            _sq_dist = jnp.sum((X[:, None, :] - T[None, :, :]) ** 2, axis=-1)
+            _sq_dist = jnp.sum((X[:, None, :] - T[None, :, :])**2, axis=-1)
 
             prob_mn = jnp.exp(-_sq_dist / (2 * sigma2))
 
-            c = (2 * jnp.pi * sigma2) ** (D / 2) * (w / (1 - w)) * (M / N)
+
+
+            c = (2 * jnp.pi * sigma2)**(D / 2) * (w / (1 - w)) * (M / N)
 
             denominators = jnp.sum(prob_mn, axis=1) + c
 
             P = (prob_mn / denominators[:, None]).T
+
+
 
             # --- M-Step (Optimized) ---
 
@@ -569,6 +560,8 @@ def _(
 
             PX = P @ X
 
+
+
             diag_P1 = jnp.diag(P1)
 
             A_new = diag_P1 @ G + lamda * sigma2 * jnp.identity(M)
@@ -576,6 +569,8 @@ def _(
             B_new = PX - diag_P1 @ Y
 
             W_new = jnp.linalg.solve(A_new, B_new)
+
+
 
             # --- Update sigma2 ---
 
@@ -585,26 +580,33 @@ def _(
 
             T_new = Y + G @ W_new
 
-            _sq_dist_new = jnp.sum(
-                (X[:, None, :] - T_new[None, :, :]) ** 2, axis=-1
-            )
+            _sq_dist_new = jnp.sum((X[:, None, :] - T_new[None, :, :])**2, axis=-1)
 
             sigma2_new = jnp.sum(P.T * _sq_dist_new) / (Np * D + eps)
 
             sigma2_new = jnp.maximum(sigma2_new, 1e-10)
 
+
+
             return (i + 1, W_new, sigma2_new, sigma2)
 
+
+
         def loop_cond(state):
+
             i, W, sigma2, sigma2_old = state
 
             err = jnp.abs(sigma2 - sigma2_old)
 
             return jnp.logical_and(i < max_iterations, err > tolerance)
 
+
+
         # Run the JAX-native while loop
 
         final_state = jax.lax.while_loop(loop_cond, loop_body, initial_state)
+
+
 
         # Unpack final results
 
@@ -614,25 +616,27 @@ def _(
 
         T_final = Y + displacement
 
+
+
         return displacement, T_final
 
+
+
     def process_frame_pair(frame_data, alpha, beta, lamda, w):
-        (
-            i,
-            padded_source_pts,
-            padded_target_pts,
-            time_gap,
-            num_source,
-            num_target,
-        ) = frame_data
+
+        i, padded_source_pts, padded_target_pts, time_gap, num_source, num_target = frame_data
+
+
 
         Y = padded_source_pts.at[:, -1].multiply(alpha)
 
         X = padded_target_pts.at[:, -1].multiply(alpha)
 
-        disp, T_f = calc_cpd_values(
-            Y, X, w, lamda=lamda, beta=beta, max_iterations=100, tolerance=1e-5
-        )
+        disp, T_f = calc_cpd_values(Y, X, w, lamda=lamda, beta=beta, max_iterations=100, tolerance=1e-5)
+
+        target_points_np = np.array(padded_target_pts)[:num_target, :2]
+
+
 
         _source = np.array(padded_source_pts).astype(np.float32)
 
@@ -648,146 +652,136 @@ def _(
 
         _displacement = _displacement[:num_source]
 
-        source_df = pd.DataFrame(
-            {
-                "frame": i,
-                "type": "source",
-                "x": _source[:, 0],
-                "y": _source[:, 1],
-                "p": _source[:, 2],
-                "dx": _displacement[:, 0],
-                "dy": _displacement[:, 1],
-                "dp": _displacement[:, 2],
-                "time_gap": np.float32(time_gap),
-            }
-        )
 
-        target_df = pd.DataFrame(
-            {
-                "frame": i,
-                "type": "target",
-                "x": _target[:, 0],
-                "y": _target[:, 1],
-                "p": _target[:, 2],
-                "time_gap": np.float32(time_gap),
-                "dx": np.float32(np.nan),
-                "dy": np.float32(np.nan),
-                "dp": np.float32(np.nan),
-            }
-        )
+
+        source_df = pd.DataFrame({
+
+            "frame": i, "type": "source", "x": _source[:, 0],
+
+            "y": _source[:, 1], "p": _source[:, 2],
+
+            "dx": _displacement[:, 0], "dy": _displacement[:, 1],
+
+            "dp": _displacement[:, 2], "time_gap": np.float32(time_gap),
+
+        })
+
+        target_df = pd.DataFrame({
+
+            "frame": i, "type": "target", "x": _target[:, 0],
+
+            "y": _target[:, 1], "p": _target[:, 2],
+
+            "time_gap": np.float32(time_gap), "dx": np.float32(np.nan),
+
+            "dy": np.float32(np.nan), "dp": np.float32(np.nan),
+
+        })
+
+
 
         # EXPLICITLY DELETE ARRAYS
 
-        del (
-            disp,
-            T_f,
-            Y,
-            X,
-            _source,
-            _target,
-            _displacement,
-            padded_source_pts,
-            padded_target_pts,
-        )
+        del disp, T_f, Y, X, _source, _target, _displacement, padded_source_pts, padded_target_pts
+
+
 
         return pd.concat([source_df, target_df], ignore_index=True)
 
+
+
+
+
     def process_file(file_info, alpha, beta, lamda, w, dt, max_points=2048, progress_queue=None):
-        """
-        This function processes a single file, applies CPD, and performs stateful tracking.
-        """
-        # Unpack file info
-        fp = file_info.path
-        st = file_info.start_time
-        dur = file_info.duration
+            """
+            This function processes a single file, applies CPD, and performs stateful tracking.
+            """
+            # Unpack file info
+            fp = file_info.path
+            st = file_info.start
+            dur = file_info.duration
 
-        # --- TRACKER INITIALIZATION ---
-        # These parameters may need tuning
-        tracker = Tracker(dist_thresh=15, max_age=5, min_hits=3, dt=dt)
+            # --- TRACKER INITIALIZATION ---
+            tracker = Tracker(dist_thresh=25, max_age=10, min_hits=3)
 
-        xy_gen = XY_Pairs_Generator(file_path=fp, dt=dt, start_time=st, duration=dur, max_points=max_points)
+            xy_gen = XY_Pairs_Generator(file_path=fp, dt=dt, start_time=st, duration=dur, max_points=max_points)
 
-        all_results = []
+            all_results = []
 
-        for frame_data in mo.status.progress_bar(xy_gen, total=dur/dt, title=fp.stem):
-            if frame_data is None:
-                continue
+            for frame_data in mo.status.progress_bar(xy_gen, total=dur/dt, title=fp.stem):
+                if frame_data is None:
+                    continue
 
-            try:
-                i, padded_source_pts, padded_target_pts, time_gap, num_source, num_target, start_time = frame_data
+                try:
+                    i, padded_source_pts, padded_target_pts, time_gap, num_source, num_target = frame_data
 
-                # --- Perform CPD as before ---
-                Y = padded_source_pts.at[:, -1].multiply(alpha)
-                X = padded_target_pts.at[:, -1].multiply(alpha)
-                disp, T_f = calc_cpd_values(Y, X, w, lamda=lamda, beta=beta, max_iterations=100, tolerance=1e-5)
+                    # --- Perform CPD ---
 
-                # Unpad the target points (our new detections)
-                # target_points_np = np.array(padded_target_pts)[:num_target, :2]
-                transformed_source_np = np.array(T_f)[:num_source]
+                    # FIX 1: Create (N, 3) arrays [x, y, p] for the CPD calculation
+                    # We slice off the 't' column (index 3)
+                    Y_cpd_in = padded_source_pts[:, :3]
+                    X_cpd_in = padded_target_pts[:, :3]
 
+                    # FIX 1 (continued): Apply alpha weight to the 'p' column (index 2)
+                    Y = Y_cpd_in.at[:, 2].multiply(alpha)
+                    X = X_cpd_in.at[:, 2].multiply(alpha)
 
-                # --- Update Tracker ---
-                if transformed_source_np.shape[0] > 0:
-                    track_ids = tracker.update(transformed_source_np[:, :2])
+                    # Now we pass the correctly-shaped (N, 3) arrays
+                    disp, T_f = calc_cpd_values(Y, X, w, lamda=lamda, beta=beta, max_iterations=100, tolerance=1e-5)
 
-                    # --- Create DataFrame with IDs ---
-                    target_df = pd.DataFrame({
-                        "frame": i,
-                        "track_id": track_ids,
-                        "x": transformed_source_np[:, 0], # Save the x from T_f
-                        "y": transformed_source_np[:, 1], # Save the y from T_f
-                        "p": transformed_source_np[:, 2], # Save the p from T_f
-                        "time_gap": np.float32(time_gap),
-                        "start_time": start_time,
-                    })
-                    all_results.append(target_df)
+                    # Unpad the target points (our new detections)
+                    # This is (N, 2) and is correct for the tracker
+                    target_points_np = np.array(padded_target_pts)[:num_target, :2]
 
-                if progress_queue:
-                    progress_queue.put({'id': fp.stem, 'progress': 1})
+                    # --- Update Tracker ---
+                    if target_points_np.shape[0] > 0:
+                        track_ids = tracker.update(target_points_np)
 
-                # Explicitly free memory
-                del disp, T_f, Y, X, padded_source_pts, padded_target_pts
+                        # Convert the full padded JAX array to NumPy *once* for data extraction
+                        target_data_full_np = np.array(padded_target_pts)[:num_target]
 
-            except Exception as e:
-                exc_type, exc_value, exc_tb = sys.exc_info()
-                logger.error(f"[{fp.stem}] Error on frame index {frame_data[0]}: {e}. Saving problematic data.")
-                logger.error(traceback.extract_tb(exc_tb).format())
-                problem_source = np.array(frame_data[1])
-                problem_target = np.array(frame_data[2])
-                np.savez(f'problem_frame_{fp.stem}_{frame_data[0]}.npz', source=problem_source, target=problem_target)
+                        # --- Create DataFrame with IDs ---
+                        target_df = pd.DataFrame({
+                            "frame": i,
+                            "track_id": track_ids,
+                            "x": target_data_full_np[:, 0], # Get x from full data
+                            "y": target_data_full_np[:, 1], # Get y from full data
+                            "p": target_data_full_np[:, 2], # Get p from full data
+                            "time_gap": np.float32(time_gap),
+                            # FIX 2: Get 't' (column 3) from the full data array,
+                            # not from the (N, 2) target_points_np array
+                            "t": np.float32(target_data_full_np[:, 3]),
+                        })
+                        all_results.append(target_df)
 
+                    if progress_queue:
+                        progress_queue.put({'id': fp.stem, 'progress': 1})
 
-        if not all_results:
-            return None
+                    # Explicitly free memory
+                    del disp, T_f, Y, X, padded_source_pts, padded_target_pts, Y_cpd_in, X_cpd_in, target_data_full_np
 
-        final_df = pd.concat(all_results, ignore_index=True)
-        return final_df
-    return File, process_file
+                except Exception as e:
+                    logger.error(f"[{fp.stem}] Error on frame index {frame_data[0]}: {e}. Saving problematic data.")
+                    problem_source = np.array(frame_data[1])
+                    problem_target = np.array(frame_data[2])
+                    np.savez(f'problem_frame_{fp.stem}_{frame_data[0]}.npz', source=problem_source, target=problem_target)
+                    continue
+
+            if not all_results:
+                return None
+
+            final_df = pd.concat(all_results, ignore_index=True)
+            return final_df
+    return files, process_file
 
 
 @app.cell
-def _(File, Path, process_file, timedelta):
-    files = [
-        # File(path = Path("/code/metavision/combo_nomod.raw"),
-        #       event_start = timedelta(minutes=0, seconds=11, microseconds=766549), duration=timedelta(seconds=30), dt=1e3),
-
-        # File(path = Path("/code/metavision/recording_2025-08-18_12-14-55_cd.dat"),
-        #      event_start= timedelta(minutes=3, seconds=37, microseconds=995800), duration=timedelta(seconds=2), dt=1e3),
-        # File(path = Path("/code/metavision/recording_2025-08-18_12-23-27.raw"),
-        #      event_start = timedelta(seconds=41, microseconds=25500), duration=timedelta(seconds=2), dt=1e3),
-        # File(path = Path("/code/metavision/recording_2025-08-18_12-46-51.raw"),
-        #      event_start = timedelta(seconds=34, microseconds=737900), duration=timedelta(seconds=2), dt=1e3),
-        File(path = Path("/code/metavision/recording_2025-08-18_12-12-09.raw"),
-             event_start=timedelta(minutes=1, seconds=4, microseconds=413700),
-             duration=timedelta(seconds=2), dt=100
-            )
-    ]
-
-
+def _(Path, files, process_file):
     alpha = 100
-    beta = 2
-    lamda = 2
-    w = 0.01
+    beta = 3
+    lamda = 3
+    w = 0.1
+    dt = 200
 
     meta = {
         "frame": "int64",
@@ -799,7 +793,7 @@ def _(File, Path, process_file, timedelta):
         "dy": "float32",
         "dp": "float32",
         "time_gap": "float32",
-        "start_time": "float32"
+        "t": "float32",
     }
 
     def save_df(df, path):
@@ -812,27 +806,15 @@ def _(File, Path, process_file, timedelta):
     for file in files:
         # Get the file's unique name stem for the output path
         stem = file.path.stem
-        output_path = Path("./") / f"{stem}_no_filter.parquet"
+        output_path = Path("./") / f"{stem}.parquet"
 
         # Create the task that processes the file
-        df = process_file(file, alpha, beta, lamda, w, file.dt)
+        df = process_file(file, alpha, beta, lamda, w, dt)
         print(save_df(df, output_path))
 
 
 
     print("All processing complete.")
-    return (files,)
-
-
-@app.cell
-def _():
-    import sys
-    return (sys,)
-
-
-@app.cell
-def _(files):
-    files[0].duration
     return
 
 

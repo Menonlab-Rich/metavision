@@ -748,7 +748,7 @@ def _(channel_mapping, df_tracks, mo, parquet, plt):
     if df_tracks.height > 0:
         # Add channel handles to legend
         for row in channel_mapping.iter_rows(named=True):
-            patch = mpatches.Patch(color=cmap(norm(row['channel_code'])), 
+            patch = mpatches.Patch(color=cmap(norm(row['channel_code'])),
                                    label=f"Channel: {row['channel']}")
             legend_handles.append(patch)
 
@@ -760,9 +760,9 @@ def _(channel_mapping, df_tracks, mo, parquet, plt):
             track_color = cmap(norm(track_df["channel_code"][0]))
 
             # --- Plot with new axis mapping: (X, Time, Y) ---
-            ax.plot(x, t, y, 
-                    color=track_color, 
-                    alpha=0.7, 
+            ax.plot(x, t, y,
+                    color=track_color,
+                    alpha=0.7,
                     linewidth=1.5)
 
             # --- Add Start/End Markers ---
@@ -785,9 +785,9 @@ def _(channel_mapping, df_tracks, mo, parquet, plt):
 
     ax.set_title(f"Observed Motion Tracks (Length > 1)\n{parquet.phenotype}")
 
-    # Adjust view: elev=elevation, azim=azimuth. This view looks at the 
+    # Adjust view: elev=elevation, azim=azimuth. This view looks at the
     # XZ plane from above and to the side, showing time moving "up".
-    ax.view_init(elev=20, azim=-120) 
+    ax.view_init(elev=20, azim=-120)
 
     # Invert the Z-axis (which is now Spatial Y) for imaging convention
     #ax.invert_zaxis()

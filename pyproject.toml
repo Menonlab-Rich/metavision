@@ -20,6 +20,7 @@ dependencies = [
     "pandas>=2.3.2",
     "polars>=1.33.1",
     "pyarrow>=21.0.0",
+    "ruff>=0.14.4",
     "shapely>=2.1.1",
     "tifffile>=2025.5.10",
     "tqdm>=4.67.1",

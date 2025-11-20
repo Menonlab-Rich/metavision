@@ -42,9 +42,9 @@ def _():
 
     parquets = [
         # Parquet(path='combo_nomod_no_filter.parquet', phenotype='COMBO', crop=(0,0,-1,-1))#(280,150, 390, 300)),
-        Parquet(path='recording_2025-08-18_12-23-27_no_filter.parquet', phenotype='6188_DR1', crop=(350, 160, -1, -1)),
-        Parquet(path='recording_2025-08-18_12-12-09_no_filter.parquet', phenotype='N2', crop=um_to_pixel(200, 300, 400, 400)),
-        Parquet(path='recording_2025-08-18_12-14-55_cd_no_filter.parquet', phenotype='UG1180_LITE1', crop=um_to_pixel(0, 200, 200,300)),
+        Parquet(path='recording_2025-08-18_12-23-27.parquet', phenotype='6188_DR1', crop=(350, 160, -1, -1)),
+        Parquet(path='recording_2025-08-18_12-12-09.parquet', phenotype='N2', crop=um_to_pixel(0, 0, -1, -1)),
+        Parquet(path='recording_2025-08-18_12-14-55.parquet', phenotype='UG1180_LITE1', crop=um_to_pixel(0, 200, 200,300)),
     ]
     return animation, mo, np, parquets, pl, plt
 
@@ -57,7 +57,14 @@ def _(mo):
 
 
 @app.cell
-def _(parquets, picker, pl):
+def _(parquets, picker):
+    parquet = parquets[picker.value]
+    parquet.df
+    return (parquet,)
+
+
+@app.cell
+def _(parquet, pl):
     def resample_df(df: pl.DataFrame) -> pl.DataFrame:
         # Define all columns to be aggregated and then exploded
         value_cols = [
@@ -76,28 +83,28 @@ def _(parquets, picker, pl):
                     pl.col("x").cast(pl.Float32),
                     pl.col("y").cast(pl.Float32),
                     # 1. Create a datetime column from the integer 't'
-                    pl.from_epoch(pl.col("t"), time_unit="us").alias("t_datetime"),
+                    pl.from_epoch(pl.col("start_time"), time_unit="us").alias("t"),
                 ]
             )
             .unique(subset=["frame", "track_id"], keep="first")
-            .sort("t_datetime")
+            .sort("t")
             .group_by_dynamic(
                 # 2. Use the new datetime column as the index
-                index_column="t_datetime",
+                index_column="t",
                 every="100us",
             )
             .agg(
                 # 3. Exclude the new datetime index from the aggregation
-                pl.all().exclude("t_datetime")
+                pl.all().exclude("t")
             )
             .with_row_count("new_frame")
-            .explode(pl.exclude("t_datetime", "new_frame"))
+            .explode(pl.exclude("t", "new_frame"))
             .select(value_cols)
             .rename({"new_frame": "frame"})
         )
 
-    parquet = parquets[picker.value]
-    df_resampled = parquet.df.sort('t').pipe(resample_df)
+
+    df_resampled = parquet.df.sort('start_time').pipe(resample_df)
 
     df_final = (
         df_resampled
@@ -125,22 +132,22 @@ def _(parquets, picker, pl):
                 (pl.col("y") - pl.col("y").shift(1).over("track_id"))**2
             ).sqrt()
         )
-        # .filter(
-        #     # Keep rows that move <= 5 pixels or are the first point of a track
-        #     ((pl.col("distance") <= 25) | (pl.col("distance").is_null())) & (pl.col("track_id").count().over("track_id") > 0)
-        #     & pl.col('p').eq(0)
-        # )
+        .filter(
+            # Keep rows that move <= 5 pixels or are the first point of a track
+            ((pl.col("distance") <= 25) | (pl.col("distance").is_null())) & (pl.col("track_id").count().over("track_id") > 0)
+            # & pl.col('p').eq(0)
+        )
         .drop('distance')
         .drop_nulls(subset=pl.col('t'))
         .sort('frame', 'track_id')
     )
 
     df_final
-    return df_final, parquet
+    return (df_final,)
 
 
 @app.cell
-def _(df_final, pl):
+def _(df_final, parquet, pl):
     sample_duration = df_final['t'].max() - df_final['t'].min()
     event_duration = 10_000
     padding_duration = 10_000
@@ -155,23 +162,22 @@ def _(df_final, pl):
         pl.col('t').is_between(start_bound, end_bound)
     )
     # --- 3. Apply the Filter ---
-    # if parquet.crop is not None:
-    #     x1, y1, x2, y2 = parquet.crop
-    #     x1 = max(0, x1)
-    #     y1 = max(0, y1)
-    #     if x2 < 1:
-    #         x2 = df_event_window.select(pl.max("x")).item()
-    #         print(x2)
-    #     if y2 < 1:
-    #         y2 = df_event_window.select(pl.max("y")).item()
+    if parquet.crop is not None:
+        x1, y1, x2, y2 = parquet.crop
+        x1 = max(0, x1)
+        y1 = max(0, y1)
+        if x2 < 1:
+            x2 = df_event_window.select(pl.max("x")).item()
+            print(x2)
+        if y2 < 1:
+            y2 = df_event_window.select(pl.max("y")).item()
 
-    #     print(x1, y1, x2, y2)
-    #     df_event_window = df_event_window.filter(
-    #         #pl.col("t").is_between(start_bound, end_bound) &
-
-    #         pl.col("x").is_between(x1, x2) &
-    #         pl.col("y").is_between(y1, y2)
-    #     )
+        print(x1, y1, x2, y2)
+        df_event_window = df_event_window.filter(
+            pl.col("t").is_between(start_bound, end_bound) &
+            pl.col("x").is_between(x1, x2) &
+            pl.col("y").is_between(y1, y2)
+        )
 
     df_event_window
     return (df_event_window,)
@@ -413,7 +419,7 @@ def _(df_event_window, mo, np, parquet, pl, plt):
         )
 
 
-        vmin, vmax = (0, 10e3)
+        vmin, vmax = (0, 30e3)
         norm=mpl.colors.Normalize(vmin=vmin, vmax=vmax)
         cmap = plt.get_cmap('batlow')
 

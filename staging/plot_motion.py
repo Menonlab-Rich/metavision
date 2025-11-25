@@ -814,8 +814,8 @@ def _(df_for_plot, mo, top_5_tracks):
 
         # --- 1. Prepare the Plot ---
         # Create 3 subplots in one row, sharing X and Y axes
-        rows = 5
-        cols = 5
+        rows = 4
+        cols = 4
         step = 230_000//(rows * cols)
         times = np.arange(0,230_000 + step, step)
         fig, axes = plt.subplots(cols, rows, figsize=(10, 40), sharex=True, sharey=True,)

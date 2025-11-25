@@ -82,7 +82,7 @@ def _():
 
 @app.cell
 def _(parquets):
-    parquets[0].df.height
+    parquets[1].df.height
     return
 
 
@@ -250,7 +250,7 @@ def _(df_final, pl):
 
     event_duration = 1_000
 
-    padding_duration = 15_000
+    padding_duration = 100_000
 
     center_of_sample = df_final['t'].min() + (sample_duration / 2)
 
@@ -270,11 +270,7 @@ def _(df_final, pl):
 
     # --- 3. Apply the Filter ---
 
-    df_event_window = df_final.filter(
-
-        pl.col("t").is_between(start_bound, end_bound)
-
-    )
+    df_event_window = df_final.filter(pl.col("t").is_between(start_bound, end_bound))
 
 
 
@@ -661,10 +657,10 @@ def _(df_event_window, pl):
             y_um=pl.col("y") * 15/10,
 
         )
-        .filter(
-            pl.col('x_um').is_between(400, 600) &
-            pl.col('y_um').is_between(0, 200)
-        )
+         .filter(
+                pl.col('x_um').is_between(400, 800) &
+                pl.col('y_um').is_between(0, 300)
+          )
 
     )
 
@@ -707,7 +703,7 @@ def _(df_for_plot, mo, np, parquet, pl, plt, top_5_tracks):
 
 
 
-        vmin, vmax = (0, 31e3)
+        vmin, vmax = (0, 230e3)
 
         norm=mpl.colors.Normalize(vmin=vmin, vmax=vmax)
 
@@ -818,23 +814,35 @@ def _(df_for_plot, mo, top_5_tracks):
 
         # --- 1. Prepare the Plot ---
         # Create 3 subplots in one row, sharing X and Y axes
-        fig, axes = plt.subplots(1, 3, figsize=(10, 7), sharex=True, sharey=True,)
-
+        rows = 5
+        cols = 5
+        step = 230_000//(rows * cols)
+        times = np.arange(0,230_000 + step, step)
+        fig, axes = plt.subplots(cols, rows, figsize=(10, 40), sharex=True, sharey=True,)
+        axes = np.reshape(axes, -1)
 
         # --- 4. Setup Colormap and Normalization ---
         # This normalization is shared across all subplots
-        vmin, vmax = (0, 31e3) # Using your new vmax
+        vmin, vmax = (0, 230e3) # Using your new vmax
         norm=mpl.colors.Normalize(vmin=vmin, vmax=vmax)
         cmap = plt.get_cmap('batlow')
 
         # --- 5. Loop Through Subplots and Plot Data ---
 
         # Define the time bins and titles for each subplot
-        subplots_info = [
-            (axes[0], (0, 15000), "0 - 15,000 µs"),
-            (axes[1], (15000, 16000), "15,000 - 16,000 µs"),
-            (axes[2], (16000, 31000), "16,000 - 31,000 µs")
-        ]
+        # subplots_info = [
+        #     (axes[0], (0, 15000), "0 - 15,000 µs"),
+        #     (axes[1], (15000, 18000), "15,000 - 18,000 µs"),
+        #     (axes[2], (16000, 30000), "18,000 - 30,000 µs"),
+        #     (axes[3], (30000, 230000), "30,000 - 230,000 µs")
+        # ]
+
+        subplots_info = []
+        print(times)
+        for i, ax in enumerate(axes):
+                from_time = times[i]
+                to_time = times[i + 1]
+                subplots_info.append((ax, (from_time, to_time), f'{from_time} μs - {to_time} μs'))
 
         # Loop through each subplot (ax), its time bin (t_min, t_max), and title
         # We use enumerate to get the index `i` to identify the last bin
@@ -847,7 +855,7 @@ def _(df_for_plot, mo, top_5_tracks):
             ax.grid(True, linestyle='--', alpha=0.6)
 
             # Only set Y label for the first plot
-            if ax == axes[0]:
+            if not (i % rows):
                 ax.set_ylabel("Y Coordinate (µm)")
 
             # Loop through each of the selected track IDs
@@ -922,8 +930,8 @@ def _(df_for_plot, mo, top_5_tracks):
         # We use this instead of tight_layout for more control
         fig.subplots_adjust(
             left=0.05,    # Left margin
-            right=0.98,   # Right margin
-            bottom=0.35,   # Bottom margin (make space for colorbar)
+            right=0.95,   # Right margin
+            bottom=0.25,   # Bottom margin (make space for colorbar)
             top=0.9,      # Top margin (make space for suptitle)
             wspace=0.05   # Width space between plots (very close)
         )
@@ -934,6 +942,110 @@ def _(df_for_plot, mo, top_5_tracks):
 
     # Call the function
     _()
+    return
+
+
+@app.cell
+def _(df_for_plot, mo, pl, plt):
+    def plot_flow_components():
+        import cramerif
+        import matplotlib.colors as mcolors
+        import matplotlib.ticker as ticker
+
+        # Setup colormap (using diverging 'vik' or 'RdBu_r')
+        try:
+            cramerif.use('vik')
+            cmap_name = 'vik'
+        except:
+            cmap_name = 'RdBu_r'
+
+        px_to_um = 1.5
+
+        # --- 1. Calculate Raw Velocities for Both Axes ---
+        df_temp = df_for_plot.sort("track_id", "t").with_columns(
+            raw_dx = pl.col("x").diff().over("track_id") * px_to_um,
+            raw_dy = pl.col("y").diff().over("track_id") * px_to_um
+        ).filter(
+            pl.col("raw_dx").is_not_null() & pl.col("raw_dy").is_not_null()
+        )
+
+        # --- 2. Define Helper to Process and Plot a Single Component ---
+        def create_hovmoller(component_col, title_prefix, noise_threshold=0.2):
+            # A. Calculate Bias (Median)
+            bias = df_temp.select(pl.col(component_col).median()).item()
+            print(f"{title_prefix} Bias Correction: {bias:.4f} µm/step")
+
+            # B. Apply Correction and Noise Gate
+            df_clean = df_temp.with_columns(
+                corrected = pl.col(component_col) - bias
+            ).with_columns(
+                clean_val = pl.when(pl.col("corrected").abs() < noise_threshold)
+                           .then(0.0)
+                           .otherwise(pl.col("corrected"))
+            )
+
+            # C. Binning (Always using X-Position for the spatial axis)
+            x_bins = 50
+            t_bins = 100000
+
+            heatmap_data = (
+                df_clean
+                .with_columns(
+                    x_bin = ((pl.col("x") - pl.col("x").min()) / (pl.col("x").max() - pl.col("x").min()) * (x_bins-1)).round(),
+                    t_bin = ((pl.col("t") - pl.col("t").min()) / (pl.col("t").max() - pl.col("t").min()) * (t_bins-1)).round()
+                )
+                .group_by(["x_bin", "t_bin"])
+                .agg(
+                    mean_velocity = (pl.col("clean_val").mean() / 100)
+                )
+                .sort("x_bin", "t_bin")
+            )
+
+            # D. Pivot to Matrix
+            matrix_df = (
+                heatmap_data
+                .pivot(values="mean_velocity", index="t_bin", columns="x_bin")
+                .fill_null(0)
+            )
+            data_matrix = matrix_df.select(pl.all().exclude("t_bin")).to_numpy().T
+            # E. Plotting
+            fig, ax = plt.subplots(figsize=(10, 6))
+
+            x_min_um = df_clean["x"].min() * px_to_um
+            x_max_um = df_clean["x"].max() * px_to_um
+            t_extent = (df_clean["t"].max() - df_clean["t"].min()) / 1000
+
+            extent = [
+                0,  t_extent,
+                x_min_um, x_max_um,
+            ]
+
+            # Center colorbar at 0
+            norm = mcolors.CenteredNorm(vcenter=0)
+
+            im = ax.imshow(data_matrix, aspect='auto', origin='lower',
+                           cmap=cmap_name, norm=norm, extent=extent, interpolation='nearest')
+
+            ax.set_title(f"{title_prefix} Flow Density")
+            ax.set_xlabel("Time (ms)")
+            ax.set_ylabel("X Position (μm)")
+            ax.xaxis.set_major_locator(ticker.MultipleLocator(base=20))
+
+            cbar = fig.colorbar(im, ax=ax)
+            cbar.set_label(f"Mean {title_prefix} Velocity (µm/μs)")
+            ax.axvline((t_extent // 2), ls='--', color='r' )
+            return mo.mpl.interactive(fig)
+
+        # --- 3. Generate the Two Plots ---
+        # Plot 1: Longitudinal Flow (X-Velocity)
+        plot_x = create_hovmoller("raw_dx", "Longitudinal (X)")
+
+        # Plot 2: Transverse Flow (Y-Velocity)
+        plot_y = create_hovmoller("raw_dy", "Transverse (Y)")
+
+        return plot_x, plot_y
+
+    plot_flow_components()
     return
 
 

@@ -10,6 +10,7 @@ $.dat
 *.mp4
 *.raw*
 *.parquet
+*.hdf5
 .jj
 yolo_dataset/
 data/

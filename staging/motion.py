@@ -286,10 +286,10 @@ def _(
 
 
     files = [
-        File(path = Path("/code/metavision/recording_2025-08-18_12-12-09.raw"), start = 64e6, duration = 1e6, crop=Crop(x0=200, y0=100, width=170, height=125)),
-        File(path = Path("/code/metavision/recording_2025-08-18_12-14-55_cd.dat"), start = 217.5e6, duration = 1e6, crop=Crop(x0=96, y0=12, width=150, height=150)),
-        File(path = Path("/code/metavision/recording_2025-08-18_12-23-27.raw"), start = 40.5e6, duration = 500e3, crop=Crop(x0=250, y0=150, width=245, height=245)),
-        File(path = Path("/code/metavision/recording_2025-08-18_12-46-51.raw"), start = 34e6, duration = 1e6, crop=Crop(x0=120, y0=284, width=283, height=200)),
+        # File(path = Path("/code/metavision/recording_2025-08-18_12-12-09.raw"), start = 64e6, duration = 1e6, crop=Crop(x0=200, y0=100, width=170, height=125)),
+        File(path = Path("/code/metavision/recording_2025-08-18_12-14-55_cd.dat"), start = 217e6, duration = 3e6, crop=Crop(x0=96, y0=12, width=150, height=150)),
+        # File(path = Path("/code/metavision/recording_2025-08-18_12-23-27.raw"), start = 40.5e6, duration = 500e3, crop=Crop(x0=250, y0=150, width=245, height=245)),
+        # File(path = Path("/code/metavision/recording_2025-08-18_12-46-51.raw"), start = 34e6, duration = 1e6, crop=Crop(x0=120, y0=100, width=283, height=300)),
     ]
 
     def progress_monitor(queue, file_stems):

@@ -164,7 +164,7 @@ def _(parquets, pl):
 
 
 
-    parquet = parquets[0]
+    parquet = parquets[3]
 
     df_resampled = parquet.df.sort('t').pipe(resample_df)
 
@@ -208,29 +208,29 @@ def _(parquets, pl):
 
         )
 
-        .with_columns(
+        # .with_columns(
 
-            # Calculate distance
+        #     # Calculate distance
 
-            distance=(
+        #     distance=(
 
-                (pl.col("x") - pl.col("x").shift(1).over("track_id"))**2 +
+        #         (pl.col("x") - pl.col("x").shift(1).over("track_id"))**2 +
 
-                (pl.col("y") - pl.col("y").shift(1).over("track_id"))**2
+        #         (pl.col("y") - pl.col("y").shift(1).over("track_id"))**2
 
-            ).sqrt()
+        #     ).sqrt()
 
-        )
+        # )
 
-        .filter(
+        # .filter(
 
-            # Keep rows that move <= 5 pixels or are the first point of a track
+        #     # Keep rows that move <= 5 pixels or are the first point of a track
 
-            ((pl.col("distance") <= 5) | (pl.col("distance").is_null())) & (pl.col("track_id").count().over("track_id") > 3)
+        #     ((pl.col("distance") <= 10) | (pl.col("distance").is_null())) & (pl.col("track_id").count().over("track_id") > 2)
 
-        )
+        # )
 
-        .drop('distance')
+        # .drop('distance')
 
         .drop_nulls(subset=pl.col('t'))
 
@@ -657,10 +657,10 @@ def _(df_event_window, pl):
             y_um=pl.col("y") * 15/10,
 
         )
-         .filter(
-                pl.col('x_um').is_between(400, 800) &
-                pl.col('y_um').is_between(0, 300)
-          )
+         # .filter(
+         #        pl.col('x_um').is_between(920, 1000) &
+         #        pl.col('y_um').is_between(200, 500)
+         #  )
 
     )
 
@@ -1013,7 +1013,7 @@ def _(df_for_plot, mo, pl, plt):
 
             x_min_um = df_clean["x"].min() * px_to_um
             x_max_um = df_clean["x"].max() * px_to_um
-            t_extent = (df_clean["t"].max() - df_clean["t"].min()) / 1000
+            t_extent = 230000 / 1000
 
             extent = [
                 0,  t_extent,
